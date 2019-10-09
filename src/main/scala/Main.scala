@@ -9,9 +9,12 @@ object Main {
     println("Existence is pain")
     git.init()
     git.add(".")
+    //git.add("lapin/hello/test.txt")
+    git.commit("foo")
     /*
     git.add("foo.txt")
-    git.add("lapin")%*/
+    git.add("lapin")
+    */
   }
 }
 
