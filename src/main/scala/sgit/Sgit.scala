@@ -3,13 +3,13 @@ package sgit
 import better.files.Dsl.{cwd, mkdir, mkdirs}
 import better.files.File
 import sgit.objects
-import sgit.objects.Blob
+import sgit.objects.{Blob, StagingArea}
 
 import scala.util.matching.Regex
 
 class Sgit(currentDir : File) {
   val gitPath: File = currentDir/".sgit"
-  val index: File =  gitPath/"index"
+  val index: StagingArea = new StagingArea(gitPath/"index")
   val head: File = gitPath/"HEAD"
 
 
@@ -22,6 +22,7 @@ class Sgit(currentDir : File) {
 
   def addBlob(file: File): Unit ={
       val sha = file.sha1
+      val blob:Blob = new Blob(sha, file)
       val folder = gitPath / "objects" / sha.substring(0, 2)
       //TODO: add blob + file size (header" to blob content before sha ???? no tho
       val fileName = sha.substring(2)
@@ -30,36 +31,16 @@ class Sgit(currentDir : File) {
           mkdir(folder)
         file.copyToDirectory(folder).renameTo(fileName) //zip?
       }
-      // TODO: Optimize name finding?
-      val ogFileName = currentDir.relativize(file).toString //This is the most beautiful thing i've ever seen
-      addFileToIndex(ogFileName, sha)
+
+      index.addFileToStagingArea(blob)
   }
 
-
-  //TODO: Não funciona se tu tenta adicionar de um sub dir!
-  // Digamos q o o root seja lapin e tenha um subdir toto
-  // e tu tenta add um file de toto
-  // O problema é q pega currentDir errado => solução? olhar pra
-  // dir acima até achar?
-  def addFileToIndex(name: String, sha: String): Unit ={
-    val fileNameRegex = ("""(.* [0-3] """+ Regex.quote(name) + """)""" ).r
-    val indexEntry : String = sha + " 0 " + name
-
-    if(fileNameRegex.findFirstIn(index.contentAsString).nonEmpty) {
-      index.
-        overwrite( // is this functional????
-          fileNameRegex.replaceAllIn(index.contentAsString, Regex quoteReplacement indexEntry)
-        )
-    } else {
-      index.appendLine(indexEntry)
-    }
-  }
 
   def add(path: String): Unit ={
     if(path == "." || path == "-A" || path == "--all"){
       // Wasteful! Stupid!
       // TODO: Refactor
-      index.clear()
+      index.clearStaginArea()
       currentDir
         .listRecursively.toSeq
         .filter(!_.isDirectory)
@@ -89,30 +70,48 @@ class Sgit(currentDir : File) {
       // create commit, if head not empty put parent in second line
       // add msg
       // diff?
-      val fileNameRegex = """(.*) \d (.*)""".r
-      val stagedFiles: Seq[(String, String)] = fileNameRegex.findAllIn(index.contentAsString)
-                                      .matchData
-                                      .map(m => (m.group(1), m.group(2))).toSeq
+      val stagedFiles = index.getAllStagedFiles()
 
+      //THIS LINE TOOK ME 2 HOURS
+      val stagedFolders = stagedFiles.map(blob => currentDir.relativize(blob.getFile()).getParent).filter(_ != null).distinct
+      println(stagedFolders)
+
+
+
+
+
+    /*
       var commitTree : Seq[String] = Seq()
       stagedFiles.foreach(
       obj =>
-        if((currentDir/obj._2).parent == currentDir){ // if the file is not in the folder
+        if((currentDir/obj._2).parent == currentDir){ // if the file is not in the root folder
           commitTree = commitTree:+ new Blob(obj._1, obj._2).toStringCommit
         } else{
-          println( (currentDir/obj._2).parent )
+          //println( File(obj._2).parent )
         }
       )
-     commitTree.foreach(println)
-    /*
+      stagedFiles.groupBy(obj => File(obj._2).parent).foreach(println)
+      println((currentDir/"lapin/hello").isSiblingOf((currentDir/"lapin/tata.txt")))
+     //commitTree.foreach(println)
+
       File.usingTemporaryFile() {tempFile =>
         //do something
       }
      */
   }
 
-  def createTree(path: File): Unit ={
 
+
+  def createTree(folder: File): String ={
+      val obj = folder.listRecursively
+        .map(file =>
+            if(file.isDirectory){
+              createTree(file)
+            }else{
+              //new Blob()
+            }
+        )
+    "fuck"
   }
 
 }
