@@ -7,7 +7,7 @@ class Blob(sha : String, file: File, modifier: Int = 0){
     //var name = currentDir.relativize(file).toString
     s"$sha $modifier $file" // maybe not string => write bytes
   }
-  def toStringCommit: String ={
+  def toStringTree: String ={
     s"blob $sha $file"
   }
 
@@ -18,15 +18,15 @@ class Blob(sha : String, file: File, modifier: Int = 0){
   def getFile: File = {
     this.file
   }
+
+  override def toString: String = s"$sha $file"
 }
-class Tree{
-
-}
-
-class commit {
-
+class Tree(sha : String = "", file: File = File("")){
+  def toStringTree = s"tree $sha $file"
 }
 
-class Folder(path: File){
-
+class Commit(tree: Tree, message: String){
+  def toStringCommit: String = {
+    tree.toStringTree + "\n" + message
+  }
 }

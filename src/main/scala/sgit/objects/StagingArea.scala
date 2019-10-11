@@ -23,7 +23,7 @@ class StagingArea(index : File) {
     }
   }
 
-  def clearStaginArea() = {
+  def clearStaginArea(): index.type = {
     index.clear()
   }
 
@@ -32,19 +32,5 @@ class StagingArea(index : File) {
     fileNameRegex.findAllIn(index.contentAsString)
       .matchData
       .map(m => new Blob(m.group(1), File(m.group(2)) )).toSeq
-  }
-
-  def getAllStagedfolders(blob: File, stagedFoders:Seq[File]): Seq[File] ={
-    println(blob, blob.parent)
-    if(!(blob.parent == None)){
-      var folders: Seq[File] = stagedFoders
-      if(!stagedFoders.contains(blob.parent) ){
-        folders = getAllStagedfolders(blob.parent, stagedFoders:+blob.parent)
-      }
-      folders
-    }else{
-      stagedFoders
-    }
-
   }
 }
