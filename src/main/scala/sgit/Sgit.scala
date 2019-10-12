@@ -1,9 +1,11 @@
 package sgit
 
-import better.files.Dsl.{cwd, mkdir, mkdirs}
+import java.util.Objects
+
+import better.files.Dsl.mkdirs
 import better.files.File
-import sgit.objects
-import sgit.objects.{Blob, Commit, Head, StagingArea, Tree}
+
+import sgit.objects.{Blob, Commit, Head, Objs, StagingArea, Tree}
 
 import scala.util.matching.Regex
 
@@ -11,6 +13,7 @@ class Sgit(currentDir : File) {
   val gitPath: File = currentDir/".sgit"
   val index: StagingArea = new StagingArea(gitPath/"index")
   val head: Head = new Head(gitPath/"HEAD", gitPath/"refs")
+  val objects: Objs = new Objs(gitPath / "objects")
 
   /**
    * Creates an sgit repo, with index and head files
@@ -32,24 +35,10 @@ class Sgit(currentDir : File) {
   def addBlob(file: File): Unit ={
       val sha = file.sha1
       val blob:Blob = new Blob(sha, file)
-      addToObjects(file,sha)
+      objects.addToObjects(file,sha)
       index.addFileToStagingArea(blob)
   }
 
-  /**
-   * Adds a file to the objects folder
-   * @param file - the file to be added (file, tree, commit)
-   * @param sha - the sha1 string
-   */
-  def addToObjects(file: File, sha: String): Unit ={
-    val folder = gitPath / "objects" / sha.substring(0, 2)
-    val fileName = sha.substring(2)
-    if (!(folder / fileName).isRegularFile) {
-      if (!folder.isDirectory)
-        mkdir(folder)
-      file.copyToDirectory(folder).renameTo(fileName) //zip?
-    }
-  }
 
   /**
    * adds a file, a folder or all files to the staging area
@@ -105,9 +94,9 @@ class Sgit(currentDir : File) {
 
     File.usingTemporaryFile() {tempFile =>
       tempFile.appendLine(message)
-      stagedFiles.foreach(file => tempFile.appendLine(file.toStringIndex))
+      stagedFiles.foreach(file => tempFile.appendLine(file.toStringCommit))
       val sha = tempFile.sha1
-      addToObjects(tempFile,sha)
+      objects.addToObjects(tempFile,sha)
       head.addCommitToHead(sha)
     }
   }
@@ -125,7 +114,7 @@ class Sgit(currentDir : File) {
     File.usingTemporaryFile() {tempFile =>
       val allFoldersInDir = folder.list.toSeq.filter(_.isDirectory).filter(_ != gitPath)
       stagedFiles.filter(blob=> blob.getFile.parent == folder).foreach(blob=>
-        tempFile.appendLine(blob.toStringTree)
+        tempFile.appendLine(blob.toStringCommit)
       )
 
       val trees: Seq[Tree] = for{
@@ -135,7 +124,7 @@ class Sgit(currentDir : File) {
       trees.distinct.foreach(t => tempFile.appendLine(t.toStringTree))
       val sha = tempFile.sha1
       resultingTree = new Tree(sha, folder)
-      addToObjects(tempFile,sha)
+      objects.addToObjects(tempFile,sha)
     }
     resultingTree
   }
@@ -151,17 +140,71 @@ class Sgit(currentDir : File) {
   }
 
   def status(): Unit ={
-    val stagedFiles = index.getAllStagedFiles
-    println("staged files")
-    stagedFiles.foreach(println)
-
-    println("untracked")
-    val untrackedFiles: Unit = currentDir.listRecursively
+    val stagedBlobs = index.getAllStagedFiles
+    val stagedFiles = for{
+      file <- stagedBlobs
+    } yield file.getFile
+    val allFilesInDir = currentDir.listRecursively
                                   .filter(_ != gitPath)
                                   .filter(!_.isChildOf(gitPath))
                                   .filter(!_.isDirectory)
-                                  .filter(!stagedFiles.contains(_))
-                                  .foreach(println)
+                                  .toList // To make it immutable otherwise the other filters are gonna modify it (even as a val, very weird)
+
+    val untrackedFiles = allFilesInDir.filter(!stagedFiles.contains(_))
+
+    val trackedFilesCurrentVersion = allFilesInDir.filter(stagedFiles.contains(_))
+    val trackedFilesCurrentVersionBlob: Map[File, String] = trackedFilesCurrentVersion.map(file => (file, file.sha1)).toMap
+    val lastCommit = head.getCurrentCommit match {
+      case Some(s) => objects.getObject(s)
+      case None => None
+    }
+    val commitedBlobs : Seq[String] = lastCommit match {
+      case Some(commit) => commit.lines.toSeq.tail
+      case None => Seq()
+    }
+    val fileNameRegex = """(.*) (.*)""".r
+    val commitedFilesMap:Map[File,String] = commitedBlobs.map(
+      entry =>
+        fileNameRegex.findAllIn(entry).matchData.map(m=> File(m.group(2)) -> m.group(1)).toSeq.head
+    ).toMap
+
+    val stagedShas = stagedBlobs.map(_.getSha)
+
+    // STAGED FILE CHANGES VS LAST COMMIT
+    val stagedModified = stagedBlobs.filter(b => commitedFilesMap.contains(b.getFile))
+                                    .filter(b => !commitedFilesMap.get(b.getFile).contains(b.getSha))
+
+    val stagedAdd = stagedBlobs.filter(b => !commitedFilesMap.contains(b.getFile))
+
+    val stagedDel = commitedFilesMap.filter( b=> !stagedFiles.contains(b._1))
+
+    // STAGED FILE CHANGES VS CURRENT DIR
+
+    val currMod = trackedFilesCurrentVersionBlob.filter(b => stagedFiles.contains(b._1))
+                                                .filter(b => !stagedShas.contains(b._2))
+    val currDel = stagedFiles.filter(f => !trackedFilesCurrentVersion.contains(f))
+
+
+    println("On branch " + head.getCurrentBranch.getOrElse(""))
+    if(stagedAdd.nonEmpty || stagedDel.nonEmpty || stagedModified.nonEmpty){
+      println("Changes to be committed:")
+      println("""   (use "sgit reset HEAD <file>..." to unstage)""")
+      stagedModified.foreach(blob=> println(Console.GREEN + s"     modified: " + currentDir.relativize(blob.getFile)))
+      stagedAdd.foreach(blob=> println(s"     added: "+ currentDir.relativize(blob.getFile)))
+      stagedDel.foreach(blob=> println(s"     deleted: "+ currentDir.relativize(blob._1)))
+    }
+
+    if(currDel.nonEmpty || currMod.nonEmpty){
+      println(Console.RESET +"Changes not staged for commit:")
+      println("""   (use "sgit add/rm <file>..." to update what will be committed)""")
+      currMod.foreach(blob=> println(Console.RED + s"     modified: " + currentDir.relativize(blob._1)))
+      currDel.foreach(blob=> println(Console.RED + s"     deleted: "+ currentDir.relativize(blob)))
+    }
+    if(untrackedFiles.nonEmpty){
+      println(Console.RESET + """Untracked files:
+                |  (use "sgit add <file>..." to include in what will be committed)""".stripMargin)
+      untrackedFiles.foreach(file=> println(Console.RED + s"      "+ currentDir.relativize(file)))
+    }
 
   }
 }

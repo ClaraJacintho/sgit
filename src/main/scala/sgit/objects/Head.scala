@@ -5,6 +5,7 @@ import better.files.File
 class Head(head: File, refs: File) {
   val refHeads: File = refs/"heads"
   val refTags: File = refs/"tags"
+
   def addCommitToHead(sha: String): Unit ={
     val branch = getCurrentBranch match {
       case Some(s) => s
