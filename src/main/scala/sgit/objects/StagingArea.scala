@@ -23,7 +23,7 @@ class StagingArea(index : File) {
     }
   }
 
-  def clearStaginArea(): index.type = {
+  def clearStaginArea(): Unit = {
     index.clear()
   }
 

@@ -85,6 +85,10 @@ class Sgit(currentDir : File) {
    */
   def commit(message : String): Unit ={
       val stagedFiles = index.getAllStagedFiles
+      /*
+      This part is for working with trees, but i decided it's too complex and adds literally nothing but more work
+      But it was so complex to do I think it deserves to stay in the code until the very end
+
 
       //THIS LINE TOOK ME 2 HOURS
       val stagedFolders = stagedFiles.map(blob => blob.getFile.parent).filter(b=> b != currentDir).distinct
@@ -97,7 +101,15 @@ class Sgit(currentDir : File) {
         val sha = tempFile.sha1
         addToObjects(tempFile,sha)
         head.addCommitToHead(sha)
-      }
+      }*/
+
+    File.usingTemporaryFile() {tempFile =>
+      tempFile.appendLine(message)
+      stagedFiles.foreach(file => tempFile.appendLine(file.toStringIndex))
+      val sha = tempFile.sha1
+      addToObjects(tempFile,sha)
+      head.addCommitToHead(sha)
+    }
   }
 
   /**
@@ -128,5 +140,28 @@ class Sgit(currentDir : File) {
     resultingTree
   }
 
+  def branch(name:String): Unit ={
+        head.createBranch(name)
+  }
 
+  def checkout(branch: String): Unit ={
+    // see if branch exists
+    // get last commit on target branch
+    // copy files back (overwrite current versions if necessary (how?)
+  }
+
+  def status(): Unit ={
+    val stagedFiles = index.getAllStagedFiles
+    println("staged files")
+    stagedFiles.foreach(println)
+
+    println("untracked")
+    val untrackedFiles: Unit = currentDir.listRecursively
+                                  .filter(_ != gitPath)
+                                  .filter(!_.isChildOf(gitPath))
+                                  .filter(!_.isDirectory)
+                                  .filter(!stagedFiles.contains(_))
+                                  .foreach(println)
+
+  }
 }
