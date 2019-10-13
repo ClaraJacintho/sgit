@@ -45,17 +45,20 @@ class Head(head: File, refs: File) {
       None
   }
 
-  def createBranch(name: String): Unit ={
+  def createBranch(name: String): Boolean ={
     refHeads.createDirectoryIfNotExists()
     if((refHeads/name).exists){
       print(s"fatal: A branch named $name already exists.")
+      false
     }else{
       val line = getCurrentCommit match{
         case Some(s) => (refHeads/name).createFile().appendLine(s)
                         head.clear().appendLine(name).appendLine(s)
         case None => head.appendLine(name)
       }
+      true
     }
+
   }
 
 

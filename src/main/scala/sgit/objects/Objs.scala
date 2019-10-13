@@ -37,7 +37,6 @@ class Objs(path: File) {
     }
      val parent = for (m <- parentRegex.findFirstMatchIn(commit)) yield m.group(1)
      parent.getOrElse("")
-
   }
 
 }

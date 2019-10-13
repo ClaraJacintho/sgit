@@ -33,4 +33,8 @@ class StagingArea(index : File) {
       .matchData
       .map(m => new Blob(m.group(1), File(m.group(2)) )).toSeq
   }
+
+  def indexAsString: String ={
+    index.contentAsString
+  }
 }

@@ -6,7 +6,7 @@ import java.util.{Calendar, Objects}
 import better.files.Dsl.mkdirs
 import better.files.File
 import sgit.objects.{Blob, Commit, Head, Objs, StagingArea, Tree}
-
+import scala.io.StdIn.readLine
 import scala.annotation.tailrec
 import scala.util.matching.Regex
 
@@ -74,7 +74,7 @@ class Sgit(currentDir : File) {
    * @param message - the commit message
    */
   def commit(message : String): Unit ={
-      val stagedFiles = index.getAllStagedFiles
+    val stagedFiles = index.getAllStagedFiles
       /*
       This part is for working with trees, but i decided it's too complex and adds literally nothing but more work
       But it was so complex to do I think it deserves to stay in the code until the very end
@@ -138,8 +138,8 @@ class Sgit(currentDir : File) {
     resultingTree
   }
 
-  def branch(name:String): Unit ={
-        head.createBranch(name)
+  def branch(name:String): Boolean ={
+    head.createBranch(name)
   }
 
   def checkout(branch: String): Unit ={
@@ -249,6 +249,48 @@ class Sgit(currentDir : File) {
     println(Console.RESET + s"Date $date")
     println()
     println(s"    $message")
+  }
+  def diff(): Unit = {
+    val fileNameRegex = """(.*) \d (.*)""".r
+    val filesToCompare : Seq[(File, File)] = fileNameRegex.findAllIn(index.indexAsString)
+      .matchData
+      .map(m => (objects.getObject(m.group(1)).getOrElse(File("")), File(m.group(2)) )).toSeq
+
+
+    // For each file
+    // If line in A but not B
+    // uh -
+    // if in B but not A
+    // +
+
+
+    //filesToCompare.map(x => (x._1.lines zip x._2.lines).count { case (a, b) => a != b }).foreach(println)
+
+    val  minuses = filesToCompare.map(x => (x._1.lines.toSeq,  x._2.lines.toSeq ))
+                                .flatMap(f => f._1.filter(b => !f._2.contains(b)))
+                                .toSeq
+
+
+
+    val pluses  = filesToCompare.map(x => (x._1.lines.toSeq,  x._2.lines.toSeq ))
+                                 .flatMap(f => f._2.filter(b => !f._1.contains(b)))
+                                 .toSeq
+    val filesName = filesToCompare.map(f =>  f._2)
+    val diffs = pluses zip minuses zip filesName
+
+      diffs.foreach(println)
+    /*diffs.foreach(d =>
+      if(d._1.nonEmpty || d._2.nonEmpty){
+        println(currentDir.relativize(d._3))
+        println(Console.GREEN + "+ " + d._1)
+        println(Console.RED + "- " + d._2 + Console.RESET)
+      }
+
+    )*/
+
 
   }
+
+
+
 }
