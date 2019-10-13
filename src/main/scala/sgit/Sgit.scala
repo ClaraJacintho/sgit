@@ -1,12 +1,13 @@
 package sgit
 
-import java.util.Objects
+import java.text.SimpleDateFormat
+import java.util.{Calendar, Objects}
 
 import better.files.Dsl.mkdirs
 import better.files.File
-
 import sgit.objects.{Blob, Commit, Head, Objs, StagingArea, Tree}
 
+import scala.annotation.tailrec
 import scala.util.matching.Regex
 
 class Sgit(currentDir : File) {
@@ -94,6 +95,14 @@ class Sgit(currentDir : File) {
 
     File.usingTemporaryFile() {tempFile =>
       tempFile.appendLine(message)
+      val now = Calendar.getInstance.getTime
+      val date = new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy Z")
+      tempFile.appendLine(date.format(now))
+      val parent = head.getCurrentCommit
+      parent match {
+        case Some(s) => tempFile.appendLine(s"parent $s")
+        case None => //nothing lol
+      }
       stagedFiles.foreach(file => tempFile.appendLine(file.toStringCommit))
       val sha = tempFile.sha1
       objects.addToObjects(tempFile,sha)
@@ -159,7 +168,7 @@ class Sgit(currentDir : File) {
       case None => None
     }
     val commitedBlobs : Seq[String] = lastCommit match {
-      case Some(commit) => commit.lines.toSeq.tail
+      case Some(commit) => commit.lines.toSeq.drop(2)
       case None => Seq()
     }
     val fileNameRegex = """(.*) (.*)""".r
@@ -205,6 +214,41 @@ class Sgit(currentDir : File) {
                 |  (use "sgit add <file>..." to include in what will be committed)""".stripMargin)
       untrackedFiles.foreach(file=> println(Console.RED + s"      "+ currentDir.relativize(file)))
     }
+  }
+
+  def log(): Unit ={
+    val commit = head.getCurrentCommit match {
+      case Some(s) => s
+      case None => println("fatal: your current branch does not have any commits yet ")
+                   return
+    }
+    printCommit(commit)
+    logRec(objects.getParent(commit))
+  }
+
+  @tailrec
+  final def logRec(sha:String): Unit ={
+    if(sha.isEmpty) return
+    else printCommit(sha)
+    val parent = objects.getParent(sha)
+    logRec(parent)
+  }
+
+  def printCommit(sha : String): Unit ={
+    val commit = objects.getObject(sha)
+    val date = commit match {
+      case Some(s) => s.lines.toSeq(1)
+      case None => ""// nothing
+    }
+    val message = commit match {
+      case Some(s) => s.lines.toSeq(0)
+      case None => ""// nothing
+    }
+
+    println(Console.YELLOW + s"commit $sha")
+    println(Console.RESET + s"Date $date")
+    println()
+    println(s"    $message")
 
   }
 }

@@ -29,4 +29,15 @@ class Objs(path: File) {
       None
   }
 
+  def getParent(sha:String): String ={
+    val parentRegex = """parent (.*)""".r
+    val commit : String= getObject(sha) match {
+      case Some(s) => s.contentAsString
+      case None => ""
+    }
+     val parent = for (m <- parentRegex.findFirstMatchIn(commit)) yield m.group(1)
+     parent.getOrElse("")
+
+  }
+
 }

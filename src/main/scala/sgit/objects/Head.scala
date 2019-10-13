@@ -1,5 +1,7 @@
 package sgit.objects
 
+import java.util.Calendar
+import java.text.SimpleDateFormat
 import better.files.File
 
 class Head(head: File, refs: File) {
@@ -11,10 +13,12 @@ class Head(head: File, refs: File) {
       case Some(s) => s
       case None => "master"
     }
+    val parent = getCurrentCommit
     refHeads.createDirectoryIfNotExists()
     (refHeads/branch).createIfNotExists().overwrite(sha)
     head.clear()
     head.appendLine(s"$branch").appendLine(sha)
+
 
   }
 
@@ -34,6 +38,13 @@ class Head(head: File, refs: File) {
       None
   }
 
+  def getParent(sha:String): Option[String] ={
+    if(!head.isEmpty && head.lines.toSeq.length > 3){
+      Some(head.lines.toSeq(3))
+    } else
+      None
+  }
+
   def createBranch(name: String): Unit ={
     refHeads.createDirectoryIfNotExists()
     if((refHeads/name).exists){
@@ -44,8 +55,9 @@ class Head(head: File, refs: File) {
                         head.clear().appendLine(name).appendLine(s)
         case None => head.appendLine(name)
       }
-
     }
   }
+
+
 
 }

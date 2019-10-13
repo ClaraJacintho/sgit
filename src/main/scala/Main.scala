@@ -8,8 +8,15 @@ object Main {
     val git = new Sgit(cwd/"TestDir")
     println("Existence is pain")
     git.init()
-    //git.add("lapin")
-    git.status()
+    git.add("lapin/tata.txt")
+    git.commit("first")
+    git.add("foo.txt")
+    git.commit("second")
+    git.add("lapin")
+    git.commit("third")
+    git.log()
+
+
   }
 }
 
