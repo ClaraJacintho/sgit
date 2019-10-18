@@ -39,4 +39,21 @@ class Objs(path: File) {
      parent.getOrElse("")
   }
 
+  def getCommittedFiles(commit : Option[File]) : Map[String, File] = {
+    val committedBlobs : Seq[String] = commit match {
+        case Some(f) =>  f.lines.toSeq.drop(3)
+
+        case None => Seq()
+      }
+
+    val fileNameRegex = """(.*) (.*)""".r
+    committedBlobs.map(
+      entry =>
+        fileNameRegex.findAllIn(entry).matchData.map(m=> m.group(2) -> getObject(m.group(1)) )
+                                                .filter(x => x._2.nonEmpty)
+                                                .map(f => f._1 -> f._2.get)
+                                                .toSeq.head
+    ).toMap
+  }
+
 }

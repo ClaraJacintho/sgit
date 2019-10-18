@@ -11,6 +11,10 @@ import scala.annotation.tailrec
 import scala.util.matching.Regex
 
 class Sgit(currentDir : File) {
+  def help(): Unit = {
+    println()
+  }
+
   val gitPath: File = currentDir/".sgit"
   val index: StagingArea = new StagingArea(gitPath/"index")
   val head: Head = new Head(gitPath/"HEAD", gitPath/"refs")
@@ -28,6 +32,8 @@ class Sgit(currentDir : File) {
     }
     files.map(a=> (gitPath/a).createIfNotExists())
   }
+
+  def isSgitRepo: Boolean =  gitPath.exists
 
   /**
    * Adds a file to the index and creates a copy on the objects folder
@@ -79,7 +85,6 @@ class Sgit(currentDir : File) {
       This part is for working with trees, but i decided it's too complex and adds literally nothing but more work
       But it was so complex to do I think it deserves to stay in the code until the very end
 
-
       //THIS LINE TOOK ME 2 HOURS
       val stagedFolders = stagedFiles.map(blob => blob.getFile.parent).filter(b=> b != currentDir).distinct
 
@@ -91,7 +96,8 @@ class Sgit(currentDir : File) {
         val sha = tempFile.sha1
         addToObjects(tempFile,sha)
         head.addCommitToHead(sha)
-      }*/
+      }
+      */
 
     File.usingTemporaryFile() {tempFile =>
       tempFile.appendLine(message)
@@ -101,7 +107,7 @@ class Sgit(currentDir : File) {
       val parent = head.getCurrentCommit
       parent match {
         case Some(s) => tempFile.appendLine(s"parent $s")
-        case None => //nothing lol
+        case None => tempFile.appendLine(s"parent")
       }
       stagedFiles.foreach(file => tempFile.appendLine(file.toStringCommit))
       val sha = tempFile.sha1
@@ -146,6 +152,40 @@ class Sgit(currentDir : File) {
     // see if branch exists
     // get last commit on target branch
     // copy files back (overwrite current versions if necessary (how?)
+    //  delete everything (check if diff exists? if yes dont checkout)
+    if(!head.checkIfBranchExists(branch)) {
+      println(s"error: pathspec $branch did not match any file(s) known to sgit")
+    } else if(head.getCurrentBranch == branch){
+      println(s"Already on '$branch'")
+    }
+    else{
+      val lastCommit = objects.getObject(head.getLastCommitOnBranch(head.getCurrentBranch))
+      val committedFilesOnCurrentBranch:Map[String, File] = objects.getCommittedFiles(lastCommit)
+      // diff between current staging area and target branch last commit, if diff dont change
+      val lastCommitOnTargetBranch = head.getLastCommitOnBranch(branch)
+      val diffTargetBranch = findDiff(lastCommitOnTargetBranch).filter(f=> f._2.nonEmpty).map(_._1)
+      val diffCurrBranch = findDiff("").filter(f=> f._2.nonEmpty).map(_._1)
+
+      val uncommittedDiff = diffTargetBranch.filter(f => diffCurrBranch.contains(f))
+      if(uncommittedDiff.nonEmpty){
+        println("error: Your local changes to the following files would be overwritten by checkout:")
+        diffTargetBranch.foreach(println)
+        println("Please commit your changes or stash them before you switch branches. \nAborting ")
+      }else {
+        // remove files that are committed on current branch but not present in target branch
+        val committedFilesOnTargetBranch = objects.getCommittedFiles(objects.getObject(lastCommitOnTargetBranch))
+        val deleteList = committedFilesOnCurrentBranch.filter(f=> !committedFilesOnTargetBranch.contains(f._1))
+
+        deleteList.foreach(f=>File(f._1).delete())
+
+        // then overwrite/createIfNotExists all committed files
+        committedFilesOnTargetBranch.foreach(println)
+        committedFilesOnTargetBranch.foreach(f =>File(f._1).createIfNotExists().overwrite(f._2.contentAsString))
+
+        head.checkout(branch)
+        index.clearStaginArea()
+      }
+    }
   }
 
   def status(): Unit ={
@@ -167,25 +207,18 @@ class Sgit(currentDir : File) {
       case Some(s) => objects.getObject(s)
       case None => None
     }
-    val commitedBlobs : Seq[String] = lastCommit match {
-      case Some(commit) => commit.lines.toSeq.drop(2)
-      case None => Seq()
-    }
-    val fileNameRegex = """(.*) (.*)""".r
-    val commitedFilesMap:Map[File,String] = commitedBlobs.map(
-      entry =>
-        fileNameRegex.findAllIn(entry).matchData.map(m=> File(m.group(2)) -> m.group(1)).toSeq.head
-    ).toMap
+
+    val committedFilesMap:Map[File,String] = head.getCommittedFilesCurrentVersion(lastCommit)
 
     val stagedShas = stagedBlobs.map(_.getSha)
 
     // STAGED FILE CHANGES VS LAST COMMIT
-    val stagedModified = stagedBlobs.filter(b => commitedFilesMap.contains(b.getFile))
-                                    .filter(b => !commitedFilesMap.get(b.getFile).contains(b.getSha))
+    val stagedModified = stagedBlobs.filter(b => committedFilesMap.contains(b.getFile))
+                                    .filter(b => !committedFilesMap.get(b.getFile).contains(b.getSha))
 
-    val stagedAdd = stagedBlobs.filter(b => !commitedFilesMap.contains(b.getFile))
+    val stagedAdd = stagedBlobs.filter(b => !committedFilesMap.contains(b.getFile))
 
-    val stagedDel = commitedFilesMap.filter( b=> !stagedFiles.contains(b._1))
+    val stagedDel = committedFilesMap.filter( b=> !stagedFiles.contains(b._1))
 
     // STAGED FILE CHANGES VS CURRENT DIR
 
@@ -194,18 +227,17 @@ class Sgit(currentDir : File) {
     val currDel = stagedFiles.filter(f => !trackedFilesCurrentVersion.contains(f))
 
 
-    println("On branch " + head.getCurrentBranch.getOrElse(""))
+    println("On branch " + head.getCurrentBranch)
     if(stagedAdd.nonEmpty || stagedDel.nonEmpty || stagedModified.nonEmpty){
       println("Changes to be committed:")
-      println("""   (use "sgit reset HEAD <file>..." to unstage)""")
       stagedModified.foreach(blob=> println(Console.GREEN + s"     modified: " + currentDir.relativize(blob.getFile)))
-      stagedAdd.foreach(blob=> println(s"     added: "+ currentDir.relativize(blob.getFile)))
-      stagedDel.foreach(blob=> println(s"     deleted: "+ currentDir.relativize(blob._1)))
+      stagedAdd.foreach(blob=> println(Console.GREEN +s"     added: "+ currentDir.relativize(blob.getFile)))
+      stagedDel.foreach(blob=> println(Console.GREEN +s"     deleted: "+ currentDir.relativize(blob._1)))
     }
 
     if(currDel.nonEmpty || currMod.nonEmpty){
       println(Console.RESET +"Changes not staged for commit:")
-      println("""   (use "sgit add/rm <file>..." to update what will be committed)""")
+      println("""   (use "sgit add <file>..." to update what will be committed)""")
       currMod.foreach(blob=> println(Console.RED + s"     modified: " + currentDir.relativize(blob._1)))
       currDel.foreach(blob=> println(Console.RED + s"     deleted: "+ currentDir.relativize(blob)))
     }
@@ -250,45 +282,64 @@ class Sgit(currentDir : File) {
     println()
     println(s"    $message")
   }
-  def diff(): Unit = {
-    val fileNameRegex = """(.*) \d (.*)""".r
-    val filesToCompare : Seq[(File, File)] = fileNameRegex.findAllIn(index.indexAsString)
-      .matchData
-      .map(m => (objects.getObject(m.group(1)).getOrElse(File("")), File(m.group(2)) )).toSeq
 
+  def diff(arg :String): Unit ={
+    val diff = findDiff(arg)
+    diff.foreach(d => printDiff(d._1, d._2))
+  }
+  def findDiff(arg :String): Seq[(File, Seq[(String, Int, String)])] = {
+    var filesToCompare : Seq[(File, File)] = Seq()
+    var fileNameRegex = "".r
+    if (arg.nonEmpty && objects.getObject(arg).nonEmpty){
+      val committedFiles = objects.getCommittedFiles(objects.getObject(arg))
+      val stagedFiles = index.getAllStagedFiles
+      filesToCompare = stagedFiles.filter(f=>committedFiles.contains(f.getFileName))
+                                  .map(f=>
+                                    (committedFiles(f.getFileName), f.getFile)
+                                  )
+    } else {
 
-    // For each file
-    // If line in A but not B
-    // uh -
-    // if in B but not A
-    // +
-
-
-    //filesToCompare.map(x => (x._1.lines zip x._2.lines).count { case (a, b) => a != b }).foreach(println)
-
-    val  minuses = filesToCompare.map(x => (x._1.lines.toSeq,  x._2.lines.toSeq ))
-                                .flatMap(f => f._1.filter(b => !f._2.contains(b)))
-                                .toSeq
-
-
-
-    val pluses  = filesToCompare.map(x => (x._1.lines.toSeq,  x._2.lines.toSeq ))
-                                 .flatMap(f => f._2.filter(b => !f._1.contains(b)))
-                                 .toSeq
-    val filesName = filesToCompare.map(f =>  f._2)
-    val diffs = pluses zip minuses zip filesName
-
-      diffs.foreach(println)
-    /*diffs.foreach(d =>
-      if(d._1.nonEmpty || d._2.nonEmpty){
-        println(currentDir.relativize(d._3))
-        println(Console.GREEN + "+ " + d._1)
-        println(Console.RED + "- " + d._2 + Console.RESET)
+      if(arg.isEmpty){
+        fileNameRegex = """(.*) \d (.*)""".r
+      } else  if ((currentDir/arg).isRegularFile) {
+        fileNameRegex = ("""(.*) \d (""" + Regex.quote((currentDir/arg).toString()) +""")""").r
+      } else {
+        println(s"fatal: ambiguous argument $arg: unknown revision or path not in the working tree.")
+        return Seq()
+        // Throw???
       }
 
-    )*/
+      filesToCompare = fileNameRegex.findAllIn(index.indexAsString)
+        .matchData
+        .map(m => (objects.getObject(m.group(1)).getOrElse(File("")), File(m.group(2)) )).toSeq
+    }
 
+    val diff : Seq[(File, Seq[(String, Int, String)])] = for {
+      f <- filesToCompare
+    }   yield (f._2, diffFiles(f._1, f._2))
 
+    diff
+
+  }
+
+  def diffFiles(a:File, b:File): Seq[(String, Int, String)] ={
+    val linesA = a.lines.zipWithIndex.toSeq
+    val linesB = b.lines.zipWithIndex.toSeq
+    val min = (linesA diff linesB).map(e => ("-", e._2, e._1))
+    val add = (linesB diff linesA).map(e => ("+", e._2, e._1))
+    val arr = min.concat(add).sortBy(_._2)
+    arr
+  }
+
+  def printDiff(file: File, diff: Seq[(String, Int, String)]): Unit ={
+    println(file)
+    diff.foreach(d =>
+        if(d._1 == "+"){
+          println(Console.GREEN + d._1 + " " + d._2 + " " + d._3 + Console.RESET)
+        }else{
+          println(Console.RED + d._1 + " " + d._2 + " " + d._3 + Console.RESET)
+        }
+    )
   }
 
 
