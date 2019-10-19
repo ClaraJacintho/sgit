@@ -1,12 +1,9 @@
 package sgit
-
 import java.text.SimpleDateFormat
-import java.util.{Calendar, Objects}
-
+import java.util.Calendar
 import better.files.Dsl.mkdirs
 import better.files.File
-import sgit.objects.{Blob, Commit, Head, Objs, StagingArea, Tree}
-import scala.io.StdIn.readLine
+import sgit.objects.{Blob, Head, ObjectsHandler, StagingArea}
 import scala.annotation.tailrec
 import scala.util.matching.Regex
 
@@ -18,7 +15,7 @@ class Sgit(currentDir : File) {
   val gitPath: File = currentDir/".sgit"
   val index: StagingArea = new StagingArea(gitPath/"index")
   val head: Head = new Head(gitPath/"HEAD", gitPath/"refs")
-  val objects: Objs = new Objs(gitPath / "objects")
+  val objects: ObjectsHandler = new ObjectsHandler(gitPath / "objects")
 
   /**
    * Creates an sgit repo, with index and head files
@@ -76,28 +73,23 @@ class Sgit(currentDir : File) {
   }
 
   /**
+   * Prints the committed files to the console
+   * @param stagedFiles
+   * @param branch
+   * @param message
+   */
+  def printCommittedFiles(stagedFiles: Seq[Blob], branch: String, message: String): Unit = {
+    Terminal.log("[" + branch + "] "+message)
+    stagedFiles.foreach(b => Terminal.log(b.getFileName))
+  }
+
+  /**
    * Creates a commit based on the files that are currently staged
+   *
    * @param message - the commit message
    */
   def commit(message : String): Unit ={
     val stagedFiles = index.getAllStagedFiles
-      /*
-      This part is for working with trees, but i decided it's too complex and adds literally nothing but more work
-      But it was so complex to do I think it deserves to stay in the code until the very end
-
-      //THIS LINE TOOK ME 2 HOURS
-      val stagedFolders = stagedFiles.map(blob => blob.getFile.parent).filter(b=> b != currentDir).distinct
-
-      val tree = createTree(currentDir, stagedFolders, stagedFiles.filter(blob => blob.getFile.isChildOf(currentDir)))
-
-      File.usingTemporaryFile() {tempFile =>
-        val commit = new Commit(tree,message)
-        tempFile.appendLine(commit.toStringCommit)
-        val sha = tempFile.sha1
-        addToObjects(tempFile,sha)
-        head.addCommitToHead(sha)
-      }
-      */
 
     File.usingTemporaryFile() {tempFile =>
       tempFile.appendLine(message)
@@ -113,86 +105,98 @@ class Sgit(currentDir : File) {
       val sha = tempFile.sha1
       objects.addToObjects(tempFile,sha)
       head.addCommitToHead(sha)
+      printCommittedFiles(stagedFiles, head.getCurrentBranch, message)
     }
   }
 
-  /**
-   * Creates a tree from a folder (including all its subdirectories)
-   * and adds the tree to the objects folder
-   * @param folder - the folder you want to make into a tree
-   * @param stagedFolders - all folders currently staged
-   * @param stagedFiles - all files currently staged
-   * @return the Tree object with the reference to the folder's tree
+  /***
+   * Crates a new branch
+   * @param name - the name of the new branch
+   * @return True if it was able to create new branch, False if not
    */
-  def createTree(folder: File, stagedFolders: Seq[File], stagedFiles: Seq[Blob]): Tree ={
-    var resultingTree : Tree = new Tree()
-    File.usingTemporaryFile() {tempFile =>
-      val allFoldersInDir = folder.list.toSeq.filter(_.isDirectory).filter(_ != gitPath)
-      stagedFiles.filter(blob=> blob.getFile.parent == folder).foreach(blob=>
-        tempFile.appendLine(blob.toStringCommit)
-      )
-
-      val trees: Seq[Tree] = for{
-        dir <- allFoldersInDir
-      } yield createTree(dir, stagedFolders, stagedFiles.filter(blob =>blob.getFile.isChildOf(dir)))
-
-      trees.distinct.foreach(t => tempFile.appendLine(t.toStringTree))
-      val sha = tempFile.sha1
-      resultingTree = new Tree(sha, folder)
-      objects.addToObjects(tempFile,sha)
-    }
-    resultingTree
-  }
-
   def branch(name:String): Boolean ={
-    head.createBranch(name)
+    name match{
+      case "-av" =>  listBranches()
+                      true
+      case _ => head.createBranch(name)
+    }
+
   }
 
-  def checkout(branch: String): Unit ={
-    // see if branch exists
-    // get last commit on target branch
-    // copy files back (overwrite current versions if necessary (how?)
-    //  delete everything (check if diff exists? if yes dont checkout)
+  /***
+   * Return files to the state they were in the last commit in the $branch branch
+   * @param branch
+   * @return True if successful, False if not
+   */
+  def checkout(branch: String): Boolean ={
+
     if(!head.checkIfBranchExists(branch)) {
-      println(s"error: pathspec $branch did not match any file(s) known to sgit")
+     Terminal.log(s"error: pathspec $branch did not match any file(s) known to sgit")
+      false
     } else if(head.getCurrentBranch == branch){
-      println(s"Already on '$branch'")
+      Terminal.log(s"Already on '$branch'")
+      false
     }
     else{
-      val lastCommit = objects.getObject(head.getLastCommitOnBranch(head.getCurrentBranch))
-      val committedFilesOnCurrentBranch:Map[String, File] = objects.getCommittedFiles(lastCommit)
-      // diff between current staging area and target branch last commit, if diff dont change
+      // If there are uncommitted chages in the staging area that would be overwritten in case of a
+      // checkout, we must not checkout!
       val lastCommitOnTargetBranch = head.getLastCommitOnBranch(branch)
-      val diffTargetBranch = findDiff(lastCommitOnTargetBranch).filter(f=> f._2.nonEmpty).map(_._1)
-      val diffCurrBranch = findDiff("").filter(f=> f._2.nonEmpty).map(_._1)
 
-      val uncommittedDiff = diffTargetBranch.filter(f => diffCurrBranch.contains(f))
+      val uncommittedDiff = findOverwrittenFiles(lastCommitOnTargetBranch)
+
       if(uncommittedDiff.nonEmpty){
-        println("error: Your local changes to the following files would be overwritten by checkout:")
-        diffTargetBranch.foreach(println)
-        println("Please commit your changes or stash them before you switch branches. \nAborting ")
+        Terminal.log("error: Your local changes to the following files would be overwritten by checkout:")
+        uncommittedDiff.foreach(f => Terminal.log(f.toString(), Console.YELLOW))
+        Terminal.log("Please commit your changes them before you switch branches. \nAborting ")
+        false
       }else {
-        // remove files that are committed on current branch but not present in target branch
+
+        val lastCommit = objects.getObject(head.getLastCommitOnBranch(head.getCurrentBranch))
+        val committedFilesOnCurrentBranch:Map[String, File] = objects.getCommittedFiles(lastCommit)
+
         val committedFilesOnTargetBranch = objects.getCommittedFiles(objects.getObject(lastCommitOnTargetBranch))
+
+        // remove files that are committed on current branch but not present in target
         val deleteList = committedFilesOnCurrentBranch.filter(f=> !committedFilesOnTargetBranch.contains(f._1))
 
         deleteList.foreach(f=>File(f._1).delete())
 
         // then overwrite/createIfNotExists all committed files
-        committedFilesOnTargetBranch.foreach(println)
         committedFilesOnTargetBranch.foreach(f =>File(f._1).createIfNotExists().overwrite(f._2.contentAsString))
 
+        // update head to target branch
         head.checkout(branch)
+
+        // clear staging area (?)
         index.clearStaginArea()
+        true
       }
     }
   }
 
+  /***
+   * Find tracked files that would be overwritten in case fo checkout
+   * @param lastCommitOnTargetBranch
+   * @return a list (Seq) of files that would be overwritten in case of checkout
+   */
+  def findOverwrittenFiles(lastCommitOnTargetBranch : String): Seq[File] ={
+    val diffTargetBranch = findDiff(lastCommitOnTargetBranch).filter(f=> f._2.nonEmpty).map(_._1)
+    val diffCurrBranch = findDiff(head.getLastCommitOnBranch(head.getCurrentBranch)).filter(f=> f._2.nonEmpty).map(_._1)
+
+    // If there is a diff in the current branch => tracked but not committed
+    // if the same file has a diff in target branch => would be overwritten and change lost forever!
+    diffTargetBranch.filter(f => diffCurrBranch.contains(f))
+  }
+
+  /***
+   * Compares the current directory with staged files
+   */
   def status(): Unit ={
     val stagedBlobs = index.getAllStagedFiles
     val stagedFiles = for{
       file <- stagedBlobs
     } yield file.getFile
+
     val allFilesInDir = currentDir.listRecursively
                                   .filter(_ != gitPath)
                                   .filter(!_.isChildOf(gitPath))
@@ -203,12 +207,13 @@ class Sgit(currentDir : File) {
 
     val trackedFilesCurrentVersion = allFilesInDir.filter(stagedFiles.contains(_))
     val trackedFilesCurrentVersionBlob: Map[File, String] = trackedFilesCurrentVersion.map(file => (file, file.sha1)).toMap
+
     val lastCommit = head.getCurrentCommit match {
       case Some(s) => objects.getObject(s)
       case None => None
     }
 
-    val committedFilesMap:Map[File,String] = head.getCommittedFilesCurrentVersion(lastCommit)
+    val committedFilesMap:Map[File,String] = objects.getCommittedFilesContent(lastCommit)
 
     val stagedShas = stagedBlobs.map(_.getSha)
 
@@ -229,10 +234,10 @@ class Sgit(currentDir : File) {
 
     println("On branch " + head.getCurrentBranch)
     if(stagedAdd.nonEmpty || stagedDel.nonEmpty || stagedModified.nonEmpty){
-      println("Changes to be committed:")
-      stagedModified.foreach(blob=> println(Console.GREEN + s"     modified: " + currentDir.relativize(blob.getFile)))
-      stagedAdd.foreach(blob=> println(Console.GREEN +s"     added: "+ currentDir.relativize(blob.getFile)))
-      stagedDel.foreach(blob=> println(Console.GREEN +s"     deleted: "+ currentDir.relativize(blob._1)))
+      Terminal.log("Changes to be committed:")
+      stagedModified.foreach(blob=> Terminal.log(s"     modified: " + currentDir.relativize(blob.getFile), Console.GREEN))
+      stagedAdd.foreach(blob=> Terminal.log(s"     added: "+ currentDir.relativize(blob.getFile), Console.GREEN))
+      stagedDel.foreach(blob=> Terminal.log(s"     deleted: "+ currentDir.relativize(blob._1), Console.GREEN))
     }
 
     if(currDel.nonEmpty || currMod.nonEmpty){
@@ -248,16 +253,23 @@ class Sgit(currentDir : File) {
     }
   }
 
+  /***
+   * Show history of commits on current branch
+   */
   def log(): Unit ={
     val commit = head.getCurrentCommit match {
       case Some(s) => s
-      case None => println("fatal: your current branch does not have any commits yet ")
+      case None => Terminal.log("fatal: your current branch does not have any commits yet ")
                    return
     }
     printCommit(commit)
     logRec(objects.getParent(commit))
   }
 
+  /***
+   * Goes through past commits and prints them
+   * @param sha
+   */
   @tailrec
   final def logRec(sha:String): Unit ={
     if(sha.isEmpty) return
@@ -266,80 +278,144 @@ class Sgit(currentDir : File) {
     logRec(parent)
   }
 
+  /***
+   * Prints commits to terminal
+   * @param sha
+   */
   def printCommit(sha : String): Unit ={
     val commit = objects.getObject(sha)
-    val date = commit match {
-      case Some(s) => s.lines.toSeq(1)
-      case None => ""// nothing
-    }
-    val message = commit match {
-      case Some(s) => s.lines.toSeq(0)
-      case None => ""// nothing
-    }
+    val date = objects.getCommitDate(commit)
+    val message = objects.getCommitMessage(commit)
 
-    println(Console.YELLOW + s"commit $sha")
-    println(Console.RESET + s"Date $date")
-    println()
-    println(s"    $message")
+    Terminal.log(s"commit $sha", Console.YELLOW)
+    Terminal.log(s"Date $date")
+    Terminal.log("")
+    Terminal.log(s"    $message")
   }
 
+  /***
+   * Finds diff bewteen staging area and other objects (according to arg) and prints it
+   *
+   * @param arg
+   *      if empty, does staging area vs last commit
+   *      if file, compares staged file with version on current dir
+   *      if commit (sha), compares staging area with that commit
+   */
   def diff(arg :String): Unit ={
     val diff = findDiff(arg)
     diff.foreach(d => printDiff(d._1, d._2))
   }
+
+  /***
+   * Finds diffences in the content of staged files and other the current dir/last commit/a particular commit
+   *
+   * @param arg
+   *      if empty, does staging area vs last commit
+   *      if file, compares staged file with version on current dir
+   *      if commit (sha), compares staging area with that commit
+   * @return e list (seq) of files with diffs
+   */
   def findDiff(arg :String): Seq[(File, Seq[(String, Int, String)])] = {
-    var filesToCompare : Seq[(File, File)] = Seq()
-    var fileNameRegex = "".r
     if (arg.nonEmpty && objects.getObject(arg).nonEmpty){
-      val committedFiles = objects.getCommittedFiles(objects.getObject(arg))
-      val stagedFiles = index.getAllStagedFiles
-      filesToCompare = stagedFiles.filter(f=>committedFiles.contains(f.getFileName))
-                                  .map(f=>
-                                    (committedFiles(f.getFileName), f.getFile)
-                                  )
+      for {
+        f <- findFilesCommit(arg)
+      } yield (f._2, diffFiles(f._1, f._2))
+
     } else {
+      for {
+        f <- findFilesInCurrentDir(arg)
+      } yield (f._2, diffFiles(f._1, f._2))
+    }
+  }
 
-      if(arg.isEmpty){
-        fileNameRegex = """(.*) \d (.*)""".r
-      } else  if ((currentDir/arg).isRegularFile) {
-        fileNameRegex = ("""(.*) \d (""" + Regex.quote((currentDir/arg).toString()) +""")""").r
-      } else {
-        println(s"fatal: ambiguous argument $arg: unknown revision or path not in the working tree.")
-        return Seq()
-        // Throw???
-      }
+  /***
+   * Find files from a commit to compare with the current staging area
+   * @param commit
+   * @return pairs of files that exist in both the commit and staging area
+   */
+  def findFilesCommit(commit : String): Seq[(File, File)] = {
+    val committedFiles = objects.getCommittedFiles(objects.getObject(commit))
+    val stagedFiles = index.getAllStagedFiles
+    stagedFiles.filter(f=>committedFiles.contains(f.getFileName))
+      .map(f=>
+        (committedFiles(f.getFileName), f.getFile)
+      )
+  }
 
-      filesToCompare = fileNameRegex.findAllIn(index.indexAsString)
+  /***
+   * Finds files from the current dir to compare with the staging area
+   * @param arg - either a file or nothing, for all files in the cwd
+   * @return  pairs of files that exist in both
+   */
+  def findFilesInCurrentDir(arg : String): Seq[(File, File)] ={
+    if(arg.isEmpty){
+       """(.*) \d (.*)""".r
+        .findAllIn(index.indexAsString)
         .matchData
         .map(m => (objects.getObject(m.group(1)).getOrElse(File("")), File(m.group(2)) )).toSeq
+
+    } else  if ((currentDir/arg).isRegularFile) {
+
+     ("""(.*) \d (""" + Regex.quote((currentDir/arg).toString()) +""")""").r
+       .findAllIn(index.indexAsString)
+       .matchData
+       .map(m => (objects.getObject(m.group(1)).getOrElse(File("")), File(m.group(2)) )).toSeq
+
+    } else {
+      Terminal.log(s"fatal: ambiguous argument $arg: unknown revision or path not in the working tree.")
+      Seq()
     }
-
-    val diff : Seq[(File, Seq[(String, Int, String)])] = for {
-      f <- filesToCompare
-    }   yield (f._2, diffFiles(f._1, f._2))
-
-    diff
 
   }
 
+  /***
+   * Given two versions of a file, finds the differences in them
+   * @param a version 1
+   * @param b version 2
+   * @return a sorted array of lines with an index, a + or - and the line
+   */
   def diffFiles(a:File, b:File): Seq[(String, Int, String)] ={
-    val linesA = a.lines.zipWithIndex.toSeq
-    val linesB = b.lines.zipWithIndex.toSeq
+    val linesA = if(a.exists) a.lines.zipWithIndex.toSeq else Seq()
+    val linesB = if(b.exists) b.lines.zipWithIndex.toSeq else Seq()
     val min = (linesA diff linesB).map(e => ("-", e._2, e._1))
     val add = (linesB diff linesA).map(e => ("+", e._2, e._1))
     val arr = min.concat(add).sortBy(_._2)
     arr
   }
 
+  /***
+   * Prints the diffs
+   * @param file - the file for which the diff was found
+   * @param diff - the diffs
+   */
   def printDiff(file: File, diff: Seq[(String, Int, String)]): Unit ={
     println(file)
     diff.foreach(d =>
         if(d._1 == "+"){
-          println(Console.GREEN + d._1 + " " + d._2 + " " + d._3 + Console.RESET)
+         Terminal.log(d._1 + " " + d._2 + " " + d._3, Console.GREEN)
         }else{
-          println(Console.RED + d._1 + " " + d._2 + " " + d._3 + Console.RESET)
+          Terminal.log(d._1 + " " + d._2 + " " + d._3, Console.RED)
         }
     )
+  }
+
+  /**
+   * Lists existing branches, latest commit on each and its message
+   */
+    def listBranches() = {
+      val branches = head.listBranches()
+                         .map(f =>
+                                (f, objects.getObject(f.contentAsString))
+                          )
+
+      branches.foreach(b =>
+                  Terminal.log(b._1.toString() + " " + b._1.contentAsString + " " + objects.getCommitMessage(b._2)))
+    }
+  /***
+   * Created with the blood, sweat and tears of Clara Jacintho :)
+   */
+  def credits = {
+   Terminal.log(File("ascii.txt").contentAsString, Console.BLUE)
   }
 
 

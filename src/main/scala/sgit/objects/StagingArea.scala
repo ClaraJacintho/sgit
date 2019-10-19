@@ -6,11 +6,10 @@ import scala.util.matching.Regex
 
 class StagingArea(index : File) {
 
-  //TODO: Não funciona se tu tenta adicionar de um sub dir!
-  // Digamos q o root seja lapin e tenha um subdir toto
-  // e tu tenta add um file de toto
-  // O problema é q pega currentDir errado => solução? olhar pra
-  // dir acima até achar?
+  /***
+   * Adds a file to the index (staging area)
+   * @param blob
+   */
   def addFileToStagingArea(blob: Blob): Unit ={
     val fileNameRegex = ("""(.* [0-3] """+ Regex.quote(blob.getFileName) + """)""" ).r
 
@@ -24,10 +23,17 @@ class StagingArea(index : File) {
     }
   }
 
+  /***
+   * clears the staging area
+   */
   def clearStaginArea(): Unit = {
     index.clear()
   }
 
+  /**
+   * gets all the staged files
+   * @return - all staged files as e sequence of blobs
+   */
   def getAllStagedFiles: Seq[Blob] = {
     val fileNameRegex = """(.*) \d (.*)""".r
     fileNameRegex.findAllIn(index.contentAsString)
