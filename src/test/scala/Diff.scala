@@ -1,26 +1,27 @@
 import better.files.Dsl._
+import better.files.File
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 import sgit.Sgit
 import utils.Utils
 
 class Diff  extends FlatSpec with BeforeAndAfterAll{
-  val testDir = cwd/"TestBranch"
+  val testDir: File = cwd/"TestDiff"
   val sgit = new Sgit(testDir)
-  val sgitDir = testDir/".sgit"
-  val index = sgitDir/"index"
-  val head = sgitDir/"HEAD"
-  val obj = sgitDir/"objects"
-  val refs = sgitDir/"refs"
-  val headsFolder = refs/"heads"
-  val fileA = testDir/"a.txt"
-  val testFolderA = testDir/"folderA"
-  val testFolderB = testFolderA/"folderB"
-  val fileB = testFolderA/"b"
-  val fileC = testFolderB/"c"
-  val fileD = testDir/"d"
+  val sgitDir: File = testDir/".sgit"
+  val index: File = sgitDir/"index"
+  val head: File = sgitDir/"HEAD"
+  val obj: File = sgitDir/"objects"
+  val refs: File = sgitDir/"refs"
+  val headsFolder: File = refs/"heads"
+  val fileA: File = testDir/"a.txt"
+  val testFolderA: File = testDir/"folderA"
+  val testFolderB: File = testFolderA/"folderB"
+  val fileB: File = testFolderA/"b"
+  val fileC: File = testFolderB/"c"
+  val fileD: File = testDir/"d"
 
 
-  override def beforeAll = {
+  override def beforeAll: Unit = {
     mkdirs(testDir)
     (testDir/"a.txt").createIfNotExists().appendLine("Existence is pain")
     mkdirs(testFolderA)
@@ -32,7 +33,7 @@ class Diff  extends FlatSpec with BeforeAndAfterAll{
     sgit.commit("1")
 
   }
-  override def afterAll = {
+  override def afterAll: Unit = {
     testDir.deleteOnExit()
     testDir.delete()
   }

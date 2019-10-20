@@ -8,8 +8,11 @@ import scala.annotation.tailrec
 import scala.util.matching.Regex
 
 class Sgit(currentDir : File) {
+
+
+
   def help(): Unit = {
-    println()
+    Terminal.log(File("help.txt").contentAsString)
   }
 
   val gitPath: File = currentDir/".sgit"
@@ -74,9 +77,9 @@ class Sgit(currentDir : File) {
 
   /**
    * Prints the committed files to the console
-   * @param stagedFiles
-   * @param branch
-   * @param message
+   * @param stagedFiles - the files in the staging area
+   * @param branch - current branch
+   * @param message - message of the commit
    */
   def printCommittedFiles(stagedFiles: Seq[Blob], branch: String, message: String): Unit = {
     Terminal.log("[" + branch + "] "+message)
@@ -120,12 +123,13 @@ class Sgit(currentDir : File) {
                       true
       case _ => head.createBranch(name)
     }
-
   }
+
+  def tag(tag: String): Boolean = head.createTag(tag)
 
   /***
    * Return files to the state they were in the last commit in the $branch branch
-   * @param branch
+   * @param branch - target branch
    * @return True if successful, False if not
    */
   def checkout(branch: String): Boolean ={
@@ -175,8 +179,8 @@ class Sgit(currentDir : File) {
   }
 
   /***
-   * Find tracked files that would be overwritten in case fo checkout
-   * @param lastCommitOnTargetBranch
+   * Find tracked files that would be overwritten in case of checkout
+   * @param lastCommitOnTargetBranch - the last commit on the target branch
    * @return a list (Seq) of files that would be overwritten in case of checkout
    */
   def findOverwrittenFiles(lastCommitOnTargetBranch : String): Seq[File] ={
@@ -241,15 +245,18 @@ class Sgit(currentDir : File) {
     }
 
     if(currDel.nonEmpty || currMod.nonEmpty){
-      println(Console.RESET +"Changes not staged for commit:")
-      println("""   (use "sgit add <file>..." to update what will be committed)""")
-      currMod.foreach(blob=> println(Console.RED + s"     modified: " + currentDir.relativize(blob._1)))
-      currDel.foreach(blob=> println(Console.RED + s"     deleted: "+ currentDir.relativize(blob)))
+      Terminal.log("Changes not staged for commit:")
+      Terminal.log("""   (use "sgit add <file>..." to update what will be committed)""")
+      currMod.foreach(blob=> Terminal.log( s"     modified: " + currentDir.relativize(blob._1), Console.RED ))
+      currDel.foreach(blob=> Terminal.log(s"     deleted: "+ currentDir.relativize(blob), Console.RED ))
     }
     if(untrackedFiles.nonEmpty){
-      println(Console.RESET + """Untracked files:
+      Terminal.log("""Untracked files:
                 |  (use "sgit add <file>..." to include in what will be committed)""".stripMargin)
-      untrackedFiles.foreach(file=> println(Console.RED + s"      "+ currentDir.relativize(file)))
+      untrackedFiles.foreach(file=> Terminal.log(s"      "+ currentDir.relativize(file), Console.RED ))
+    }
+    if(currDel.isEmpty && currMod.isEmpty && untrackedFiles.isEmpty && stagedAdd.isEmpty && stagedDel.isEmpty && stagedModified.isEmpty){
+      Terminal.log("No changes to commit!")
     }
   }
 
@@ -268,7 +275,7 @@ class Sgit(currentDir : File) {
 
   /***
    * Goes through past commits and prints them
-   * @param sha
+   * @param sha - commit's sha
    */
   @tailrec
   final def logRec(sha:String): Unit ={
@@ -280,7 +287,7 @@ class Sgit(currentDir : File) {
 
   /***
    * Prints commits to terminal
-   * @param sha
+   * @param sha - commit's sha
    */
   def printCommit(sha : String): Unit ={
     val commit = objects.getObject(sha)
@@ -330,7 +337,7 @@ class Sgit(currentDir : File) {
 
   /***
    * Find files from a commit to compare with the current staging area
-   * @param commit
+   * @param commit - commit to compare
    * @return pairs of files that exist in both the commit and staging area
    */
   def findFilesCommit(commit : String): Seq[(File, File)] = {
@@ -402,19 +409,19 @@ class Sgit(currentDir : File) {
   /**
    * Lists existing branches, latest commit on each and its message
    */
-    def listBranches() = {
+    def listBranches(): Unit = {
+
       val branches = head.listBranches()
-                         .map(f =>
-                                (f, objects.getObject(f.contentAsString))
+                         .map(f =>(f, objects.getObject(f.contentAsString))
                           )
 
       branches.foreach(b =>
                   Terminal.log(b._1.toString() + " " + b._1.contentAsString + " " + objects.getCommitMessage(b._2)))
     }
   /***
-   * Created with the blood, sweat and tears of Clara Jacintho :)
+   * Created with the blood, sweat, and tears of Clara Jacintho :)
    */
-  def credits = {
+  def credits(): Unit = {
    Terminal.log(File("ascii.txt").contentAsString, Console.BLUE)
   }
 

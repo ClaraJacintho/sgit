@@ -1,22 +1,23 @@
 import better.files.Dsl.{cwd, mkdirs}
+import better.files.File
 import org.scalatest.{BeforeAndAfterAll, FlatSpec}
 import sgit.Sgit
 import utils.Utils
 
 class Add extends FlatSpec with BeforeAndAfterAll {
-  val testDir = cwd/"ThisProjectSucks"
-  val sgit = new Sgit(testDir)
-  val sgitDir = testDir/".sgit"
-  val index = sgitDir/"index"
-  val obj = sgitDir/"objects"
-  val fileA = testDir/"a.txt"
-  val testFolderA = testDir/"folderA"
-  val testFolderB = testFolderA/"folderB"
-  val fileB = testFolderA/"b"
-  val fileC = testFolderB/"c"
+  val testDir: File = cwd/"AddTest"
+  val sgit: Sgit = new Sgit(testDir)
+  val sgitDir: File = testDir/".sgit"
+  val index: File = sgitDir/"index"
+  val obj: File = sgitDir/"objects"
+  val fileA: File = testDir/"a.txt"
+  val testFolderA: File = testDir/"folderA"
+  val testFolderB: File = testFolderA/"folderB"
+  val fileB: File = testFolderA/"b"
+  val fileC: File = testFolderB/"c"
 
 
-  override def beforeAll = {
+  override def beforeAll: Unit = {
     mkdirs(testDir)
     (testDir/"a.txt").createIfNotExists().appendLine("Existence is pain")
     mkdirs(testFolderA)
@@ -26,7 +27,7 @@ class Add extends FlatSpec with BeforeAndAfterAll {
     sgit.init()
   }
 
-  override def afterAll = {
+  override def afterAll: Unit = {
     testDir.deleteOnExit()
     testDir.delete()
   }
@@ -40,7 +41,7 @@ class Add extends FlatSpec with BeforeAndAfterAll {
   }
   it should "create an a blob and store it in the object folder" in{
     val fileAData = Utils.getFolderFileName(fileA.sha1)
-    println((obj/fileAData(0)), fileAData)
+    println(obj/fileAData(0), fileAData)
     assert((obj/fileAData(0)).isDirectory)
     assert((obj/fileAData(0)/fileAData(1)).isRegularFile)
   }

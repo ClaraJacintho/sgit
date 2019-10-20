@@ -2,7 +2,9 @@ package sgit.objects
 
 import java.util.Calendar
 import java.text.SimpleDateFormat
+
 import better.files.File
+import sgit.Terminal
 
 class Head(head: File, refs: File) {
 
@@ -66,7 +68,7 @@ class Head(head: File, refs: File) {
   def createBranch(name: String): Boolean ={
     refHeads.createDirectoryIfNotExists()
     if((refHeads/name).exists){
-      print(s"fatal: A branch named $name already exists.")
+      Terminal.log(s"fatal: A branch named $name already exists.")
       false
     }else{
       val line = getCurrentCommit match{
@@ -92,7 +94,7 @@ class Head(head: File, refs: File) {
 
   /***
    * get the last commit on a given branch
-   * @param branch
+   * @param branch - target branch
    * @return the sha of the last commit on the branch
    */
   def getLastCommitOnBranch(branch:String) : String = {
@@ -101,7 +103,7 @@ class Head(head: File, refs: File) {
 
   /***
    * updates head after a successful checkout
-   * @param branch
+   * @param branch - target branch
    */
   def checkout(branch : String): Unit ={
       head.clear()
@@ -111,8 +113,26 @@ class Head(head: File, refs: File) {
 
   def listBranches(): Seq[File] = {
     // list ref/heads
-    refHeads.list.toSeq
+    refHeads.list.toSeq.concat(refTags.list.toSeq)
   }
 
+  /***
+   * creates a new branch if it doesnt exit
+   * @param name - the name of the new branch
+   * @return true if the branch was created, false otherwise
+   */
+  def createTag(name: String): Boolean ={
+    refTags.createDirectoryIfNotExists()
+    if((refTags/name).exists){
+      Terminal.log(s"fatal: A tag named $name already exists.")
+      false
+    }else{
+      getCurrentCommit match{
+        case Some(s) => (refTags/name).createFile().append(s)
+        case None => false
+      }
+      true
+    }
+  }
 
 }
