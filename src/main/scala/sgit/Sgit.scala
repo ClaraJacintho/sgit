@@ -10,11 +10,6 @@ import scala.util.matching.Regex
 class Sgit(currentDir : File) {
 
 
-
-  def help(): Unit = {
-    Terminal.log(File("help.txt").contentAsString)
-  }
-
   val gitPath: File = currentDir/".sgit"
   val index: StagingArea = new StagingArea(gitPath/"index")
   val head: Head = new Head(gitPath/"HEAD", gitPath/"refs")
@@ -422,9 +417,35 @@ class Sgit(currentDir : File) {
    * Created with the blood, sweat, and tears of Clara Jacintho :)
    */
   def credits(): Unit = {
-   Terminal.log(File("ascii.txt").contentAsString, Console.BLUE)
+   Terminal.log("          *_   _   _   _   _   _ *\n" +
+     "  ^       | `_' `-' `_' `-' `_' `|       ^\n" +
+     "  |       | Maria Clara Jacintho |       |\n" +
+     "  |  (*)  |_   _   _   _   _   _ |  \\^/  |\n" +
+     "  | _<\">_ | `_' `-' `_' `-' `_' `| _(#)_ |\n" +
+     " o+o \\ / \\0                      0/ \\ / (=)\n" +
+     "  0'\\ ^ /\\/                      \\/\\ ^ /`0\n" +
+     "    /_^_\\ |                      | /_^_\\\n" +
+     "    || || |                      | || ||\n" +
+     "    d|_|b_T______________________T_d|_|b", Console.BLUE)
   }
 
+  def help(): Unit = {
+    Terminal.log("usage: sgit <command> [<args>]\n\n" +
+      "These are common SGit commands used in various situations:\n\n" +
+      "start a working area \n" +
+      "   init       Create an empty SGit repository or reinitialize an existing one\n\n" +
+      "work on the current change\n" +
+      "   add        Add file contents to the index\n\n" +
+      "examine the history and state\n" +
+      "   log        Show commit logs\n" +
+      "   status     Show the working tree status\n\n" +
+      "grow, mark and tweak your common history\n" +
+      "   branch     List (-av) or create branches\n" +
+      "   checkout   Switch branches\n" +
+      "   commit     Record changes to the repository\n " +
+      "  diff       Show changes between commit and working tree\n" +
+      "   tag        Create a tag object\n")
+  }
 
 
 }

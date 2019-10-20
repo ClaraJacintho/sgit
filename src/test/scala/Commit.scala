@@ -45,6 +45,7 @@ class Commit  extends FlatSpec with BeforeAndAfterAll{
     assert(commit.contentAsString.contains(fileB.toString()))
     assert(commit.contentAsString.contains(fileC.toString()))
   }
+
   it should "add the reference to this blob in HEAD" in {
     val commitString = sgit.head.getCurrentCommit.getOrElse("")
     val commitData = Utils.getFolderFileName(commitString)

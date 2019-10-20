@@ -113,7 +113,14 @@ class Head(head: File, refs: File) {
 
   def listBranches(): Seq[File] = {
     // list ref/heads
-    refHeads.list.toSeq.concat(refTags.list.toSeq)
+    if(refTags.exists && refHeads.exists)
+      refHeads.list.toSeq.concat(refTags.list.toSeq)
+    else if(refHeads.exists)
+      refHeads.list.toSeq
+    else if(refTags.exists)
+      refTags.list.toSeq
+    else
+      Seq()
   }
 
   /***

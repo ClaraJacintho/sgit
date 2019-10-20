@@ -13,7 +13,7 @@ object Main {
       git.init()
     } else {
       if(!git.isSgitRepo){ //make a isSgitRepo func
-        println("fatal: not a sgit repository", Console.RED)
+        Terminal.log("fatal: not a sgit repository", Console.RED)
       } else {
         args(0) match {
           case "add" => if(args.length > 1) git.add(args(1)) else git.add(".")

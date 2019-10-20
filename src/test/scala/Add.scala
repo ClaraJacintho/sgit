@@ -36,9 +36,9 @@ class Add extends FlatSpec with BeforeAndAfterAll {
 
   "Add" should "add a document to the index" in {
     sgit.add("a.txt")
-
     assert(index.contentAsString.contains(fileA.toString()))
   }
+
   it should "create an a blob and store it in the object folder" in{
     val fileAData = Utils.getFolderFileName(fileA.sha1)
     println(obj/fileAData(0), fileAData)
